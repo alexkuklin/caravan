@@ -16,7 +16,7 @@
 | JBD BMS 8S (24V) | BLE → RS485 planned | A4:C1:37:54:73:05 | JST serial port available |
 | JBD BMS 4S (12V) | BLE → RS485 planned | A5:C2:37:30:C9:EA | JST serial port available |
 | Sunster diesel heater | BLE | DC:23:4F:ED:D7:D2 | App: com.clj.airheater (Hcalory/Vevor protocol) |
-| PowMR HHJ60-PRO MPPT | RS485 Modbus RTU | — | SRNE-based, register map from SRNE docs |
+| PowMR HHJ60-PRO MPPT | RS485 (parallel sync only) | /dev/ttyUSB0 | RS485 is for multi-device sync only — broadcasts 15-byte identity frame, no sensor data. Need second unit to sniff inter-device protocol. Considering dual MPPT setup (also solves panel shading problem). |
 | PowMR POW-HVM4.2K-24V-D | RS485 RJ45 direct (planned) | 192.168.88.238 (datalogger) | Cloud app: com.ssli.next.solar (Siseli/Solar of Things); cloud updates too slow (5min) |
 | PZEM-017 shunt | RS485 Modbus RTU | — | Not yet installed; DC power meter, published register map |
 
@@ -142,7 +142,7 @@ TODO: find a way to permanently disable.
 
 - [ ] Switch JBD BMS from BLE to RS485/UART (JST connector, 9600 baud, same JBD protocol)
 - [ ] Wire PowMR inverter RS485 RJ45 port directly (bypass cloud datalogger)
-- [ ] Wire MPPT HHJ60-PRO RS485 (SRNE Modbus RTU)
+- [ ] MPPT monitoring — requires second HHJ60-PRO unit to enable inter-device RS485 sniffing (also needed for dual-string setup to address panel shading)
 - [ ] Install and wire PZEM shunt
 - [ ] Diesel heater BLE integration (Hcalory/Vevor protocol, bderleta/vevor-ble-bridge)
 - [ ] Build HA dashboard
