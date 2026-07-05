@@ -18,7 +18,7 @@
 | Sunster diesel heater | BLE | DC:23:4F:ED:D7:D2 | App: com.clj.airheater (Hcalory/Vevor protocol) |
 | PowMR HHJ60-PRO MPPT | RS485 Modbus RTU | — | SRNE-based, register map from SRNE docs |
 | PowMR POW-HVM4.2K-24V-D | RS485 RJ45 direct (planned) | 192.168.88.238 (datalogger) | Cloud app: com.ssli.next.solar (Siseli/Solar of Things); cloud updates too slow (5min) |
-| PZEM shunt (model TBD) | RS485 Modbus RTU | — | Not yet installed |
+| PZEM-017 shunt | RS485 Modbus RTU | — | Not yet installed; DC power meter, published register map |
 
 ## Software Stack
 
