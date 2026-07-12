@@ -18,8 +18,8 @@ log = logging.getLogger("pzem")
 
 MQTT_HOST     = "localhost"
 MQTT_PORT     = 1883
-POLL_INTERVAL = 10
-SERIAL_PORT   = "/dev/ttyUSB1"
+POLL_INTERVAL = 1
+SERIAL_PORT   = "/dev/ttyPZEM"
 SLAVE_ADDR    = 1
 DEVICE_NAME   = "shunt"
 DEVICE_LABEL  = "DC Shunt"

@@ -19,10 +19,11 @@ logging.basicConfig(
 )
 log = logging.getLogger("bms")
 
-MQTT_HOST       = "localhost"
-MQTT_PORT       = 1883
-POLL_INTERVAL   = 10  # seconds between polls
-CONNECT_TIMEOUT = 2
+MQTT_HOST           = "localhost"
+MQTT_PORT           = 1883
+POLL_INTERVAL_SERIAL = 2   # seconds between serial polls
+POLL_INTERVAL_BLE    = 10  # seconds between BLE polls
+CONNECT_TIMEOUT      = 2
 
 NOTIFY_UUID = "0000ff01-0000-1000-8000-00805f9b34fb"
 WRITE_UUID  = "0000ff02-0000-1000-8000-00805f9b34fb"
@@ -30,7 +31,7 @@ CMD_BASIC   = bytes([0xdd, 0xa5, 0x03, 0x00, 0xff, 0xfd, 0x77])
 CMD_CELLS   = bytes([0xdd, 0xa5, 0x04, 0x00, 0xff, 0xfc, 0x77])
 
 DEVICES = [
-    {"serial_port": "/dev/ttyUSB0", "name": "8s_battery", "label": "8S Battery"},
+    {"serial_port": "/dev/ttyBMS8S", "name": "8s_battery", "label": "8S Battery"},
     {"mac": "A5:C2:37:30:C9:EA",   "name": "4s_battery", "label": "4S Battery"},
 ]
 
@@ -71,24 +72,21 @@ def parse_cells(data: bytes, bms: BmsData) -> None:
     ]
 
 
-def read_bms_serial(port: str) -> Optional[BmsData]:
+def read_bms_serial(s: pyserial.Serial) -> Optional[BmsData]:
+    import time
     try:
-        s = pyserial.Serial(port, baudrate=9600, timeout=2)
+        s.reset_input_buffer()
         s.write(CMD_BASIC)
-        import time; time.sleep(0.3)
-        basic_data = s.read(64)
-        bms = parse_basic(bytes(basic_data))
+        time.sleep(0.1)
+        bms = parse_basic(bytes(s.read(64)))
         if bms is None:
-            s.close()
             return None
         s.write(CMD_CELLS)
-        time.sleep(0.3)
-        cells_data = s.read(64)
-        parse_cells(bytes(cells_data), bms)
-        s.close()
+        time.sleep(0.1)
+        parse_cells(bytes(s.read(64)), bms)
         return bms
     except (pyserial.SerialException, OSError) as e:
-        log.warning("Serial error on %s: %s", port, e)
+        log.warning("Serial error: %s", e)
         return None
 
 
@@ -197,22 +195,38 @@ def publish_state(mqttc: mqtt.Client, device: dict, bms: BmsData) -> None:
              payload["voltage"], payload["current"], payload["soc"], payload["remaining_ah"])
 
 
-async def poll_device(mqttc: mqtt.Client, device: dict, discovery_done: set) -> None:
+async def poll_serial(mqttc: mqtt.Client, device: dict, discovery_done: set) -> None:
     dev_id = device["name"]
-    log.info("Polling %s", device["label"])
-    if "serial_port" in device:
-        bms = await asyncio.get_event_loop().run_in_executor(
-            None, read_bms_serial, device["serial_port"]
-        )
-    else:
+    s = pyserial.Serial(device["serial_port"], baudrate=9600, timeout=1)
+    log.info("Opened serial %s for %s", device["serial_port"], device["label"])
+    try:
+        while True:
+            bms = await asyncio.get_event_loop().run_in_executor(None, read_bms_serial, s)
+            if bms is None:
+                log.warning("No data from %s", device["label"])
+            else:
+                if dev_id not in discovery_done:
+                    publish_discovery(mqttc, device, bms)
+                    discovery_done.add(dev_id)
+                publish_state(mqttc, device, bms)
+            await asyncio.sleep(POLL_INTERVAL_SERIAL)
+    finally:
+        s.close()
+
+
+async def poll_ble(mqttc: mqtt.Client, device: dict, discovery_done: set) -> None:
+    dev_id = device["name"]
+    while True:
+        log.info("Polling %s", device["label"])
         bms = await read_bms(device["mac"])
-    if bms is None:
-        log.warning("No data from %s", device["label"])
-        return
-    if dev_id not in discovery_done:
-        publish_discovery(mqttc, device, bms)
-        discovery_done.add(dev_id)
-    publish_state(mqttc, device, bms)
+        if bms is None:
+            log.warning("No data from %s", device["label"])
+        else:
+            if dev_id not in discovery_done:
+                publish_discovery(mqttc, device, bms)
+                discovery_done.add(dev_id)
+            publish_state(mqttc, device, bms)
+        await asyncio.sleep(POLL_INTERVAL_BLE)
 
 
 async def main() -> None:
@@ -221,12 +235,13 @@ async def main() -> None:
     mqttc.loop_start()
 
     discovery_done: set = set()
-
-    while True:
-        for dev in DEVICES:
-            await poll_device(mqttc, dev, discovery_done)
-            await asyncio.sleep(1)
-        await asyncio.sleep(POLL_INTERVAL)
+    tasks = []
+    for dev in DEVICES:
+        if "serial_port" in dev:
+            tasks.append(asyncio.create_task(poll_serial(mqttc, dev, discovery_done)))
+        else:
+            tasks.append(asyncio.create_task(poll_ble(mqttc, dev, discovery_done)))
+    await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":
