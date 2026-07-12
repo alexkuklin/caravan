@@ -79,7 +79,31 @@ CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
 WantedBy=multi-user.target
 ```
 
-### 3. BMS Collector
+### 3. USB Serial Device Naming
+
+Create `/etc/udev/rules.d/99-caravan-serial.rules` to assign stable device names
+regardless of USB enumeration order. Port paths are fixed to physical USB ports on the RPi.
+
+```
+# 8S BMS - CH340 on USB port 1.2
+SUBSYSTEM=="tty", ENV{ID_PATH}=="platform-3f980000.usb-usb-0:1.2:1.0", SYMLINK+="ttyBMS8S"
+
+# PZEM-017 shunt - CH340 on USB port 1.4
+SUBSYSTEM=="tty", ENV{ID_PATH}=="platform-3f980000.usb-usb-0:1.4:1.0", SYMLINK+="ttyPZEM"
+```
+
+```bash
+udevadm control --reload-rules && udevadm trigger
+# Verify:
+ls -la /dev/ttyBMS8S /dev/ttyPZEM
+```
+
+If you add more devices or plug into different ports, check the path with:
+```bash
+udevadm info /dev/ttyUSBx | grep ID_PATH
+```
+
+### 5. BMS Collector
 
 Install `/opt/bms_collector.py` (see repository).
 
@@ -128,7 +152,7 @@ systemctl enable --now pzem-collector
 systemctl enable --now homeassistant
 ```
 
-### 4. HA Configuration
+### 6. HA Configuration
 
 - Add **MQTT** integration: host `localhost`, port `1883`, no auth
 - BMS sensors appear automatically via MQTT discovery
