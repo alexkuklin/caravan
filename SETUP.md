@@ -18,7 +18,7 @@
 | Sunster diesel heater | BLE | DC:23:4F:ED:D7:D2 | Tuya BLE protocol (service 0x1910, chars 0x2b10/0x2b11, device name "COMMON"). Not the older Hcalory FFE0 protocol. Needs local key — plan: sniff with Motorola phone HCI log. |
 | PowMR HHJ60-PRO MPPT | RS485 (parallel sync only) | /dev/ttyUSB0 | RS485 is for multi-device sync only — broadcasts 15-byte identity frame, no sensor data. Need second unit to sniff inter-device protocol. Considering dual MPPT setup (also solves panel shading problem). |
 | PowMR POW-HVM4.2K-24V-D | RS485 RJ45 direct (planned) | 192.168.88.238 (datalogger) | Cloud app: com.ssli.next.solar (Siseli/Solar of Things); cloud updates too slow (5min) |
-| PZEM-017 shunt | RS485 Modbus RTU | — | Not yet installed; DC power meter, published register map |
+| PZEM-017 shunt | RS485 Modbus RTU | /dev/ttyUSB1 (CH340) | FC04, 9600 baud, 2 stop bits, slave 1. Powered via USB. Not yet wired to actual shunt. |
 
 ## Software Stack
 
@@ -27,6 +27,7 @@
 | Mosquitto | apt | /etc/mosquitto/ |
 | Home Assistant Core 2026.2.3 | /srv/homeassistant (venv) | /home/homeassistant/.homeassistant/ |
 | BMS collector | /opt/bms_collector.py | Systemd: bms-collector.service. Supports both UART serial (pyserial) and BLE per device. |
+| PZEM collector | /opt/pzem_collector.py | Systemd: pzem-collector.service. PZEM-017 via Modbus RTU FC04, 9600 baud, 2 stop bits, slave 1. |
 | HACS | HA custom_components | Via HA UI |
 | Solar of Things | /home/homeassistant/.homeassistant/custom_components/solar_of_things/ | Via HA UI |
 
@@ -83,7 +84,7 @@ WantedBy=multi-user.target
 Install `/opt/bms_collector.py` (see repository).
 
 ```bash
-pip3 install bleak paho-mqtt pyserial --break-system-packages
+pip3 install bleak paho-mqtt pyserial pymodbus --break-system-packages
 ```
 
 `/etc/systemd/system/bms-collector.service`:
@@ -103,9 +104,27 @@ User=root
 WantedBy=multi-user.target
 ```
 
+`/etc/systemd/system/pzem-collector.service`:
+```ini
+[Unit]
+Description=PZEM-017 DC Shunt MQTT Collector
+After=network.target mosquitto.service
+Requires=mosquitto.service
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/pzem_collector.py
+Restart=on-failure
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+```
+
 ```bash
 systemctl daemon-reload
 systemctl enable --now bms-collector
+systemctl enable --now pzem-collector
 systemctl enable --now homeassistant
 ```
 
@@ -144,6 +163,6 @@ TODO: find a way to permanently disable.
 - [ ] Switch JBD BMS 4S from BLE to UART serial (needs second CH340 adapter)
 - [ ] Wire PowMR inverter RS485 RJ45 port directly (bypass cloud datalogger)
 - [ ] MPPT monitoring — requires second HHJ60-PRO unit to enable inter-device RS485 sniffing (also needed for dual-string setup to address panel shading)
-- [ ] Install and wire PZEM shunt
+- [ ] Wire PZEM-017 to actual shunt (currently reads 0V/0A)
 - [ ] Diesel heater BLE integration — Tuya BLE protocol confirmed (service 0x1910); need BLE HCI snoop log from Motorola phone to extract local key. Samsung Galaxy S25 bugreport does not include BT log. Alternatively try `tuya_ble` HA custom component which handles key exchange automatically.
 - [ ] Build HA dashboard
