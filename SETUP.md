@@ -13,9 +13,9 @@
 
 | Device | Protocol | ID / Address | Notes |
 |--------|----------|-------------|-------|
-| JBD BMS 8S (24V) | BLE → RS485 planned | A4:C1:37:54:73:05 | JST serial port available |
+| JBD BMS 8S (24V) | UART serial (CH340, /dev/ttyUSB0) | A4:C1:37:54:73:05 | Model OH20SA01L20S200A, SW 2.1. JST connector wired to CH340 USB-UART. RPi placed next to battery box, powered via GPIO 5V from 12V→5V step-down. |
 | JBD BMS 4S (12V) | BLE → RS485 planned | A5:C2:37:30:C9:EA | JST serial port available |
-| Sunster diesel heater | BLE | DC:23:4F:ED:D7:D2 | App: com.clj.airheater (Hcalory/Vevor protocol) |
+| Sunster diesel heater | BLE | DC:23:4F:ED:D7:D2 | Tuya BLE protocol (service 0x1910, chars 0x2b10/0x2b11, device name "COMMON"). Not the older Hcalory FFE0 protocol. Needs local key — plan: sniff with Motorola phone HCI log. |
 | PowMR HHJ60-PRO MPPT | RS485 (parallel sync only) | /dev/ttyUSB0 | RS485 is for multi-device sync only — broadcasts 15-byte identity frame, no sensor data. Need second unit to sniff inter-device protocol. Considering dual MPPT setup (also solves panel shading problem). |
 | PowMR POW-HVM4.2K-24V-D | RS485 RJ45 direct (planned) | 192.168.88.238 (datalogger) | Cloud app: com.ssli.next.solar (Siseli/Solar of Things); cloud updates too slow (5min) |
 | PZEM-017 shunt | RS485 Modbus RTU | — | Not yet installed; DC power meter, published register map |
@@ -26,7 +26,7 @@
 |---------|-------------|--------|
 | Mosquitto | apt | /etc/mosquitto/ |
 | Home Assistant Core 2026.2.3 | /srv/homeassistant (venv) | /home/homeassistant/.homeassistant/ |
-| BMS collector | /opt/bms_collector.py | Systemd: bms-collector.service |
+| BMS collector | /opt/bms_collector.py | Systemd: bms-collector.service. Supports both UART serial (pyserial) and BLE per device. |
 | HACS | HA custom_components | Via HA UI |
 | Solar of Things | /home/homeassistant/.homeassistant/custom_components/solar_of_things/ | Via HA UI |
 
@@ -83,7 +83,7 @@ WantedBy=multi-user.target
 Install `/opt/bms_collector.py` (see repository).
 
 ```bash
-pip3 install bleak paho-mqtt --break-system-packages
+pip3 install bleak paho-mqtt pyserial --break-system-packages
 ```
 
 `/etc/systemd/system/bms-collector.service`:
@@ -140,9 +140,10 @@ TODO: find a way to permanently disable.
 
 ## Planned Work
 
-- [ ] Switch JBD BMS from BLE to RS485/UART (JST connector, 9600 baud, same JBD protocol)
+- [x] Switch JBD BMS 8S from BLE to UART serial (JST → CH340 → /dev/ttyUSB0)
+- [ ] Switch JBD BMS 4S from BLE to UART serial (needs second CH340 adapter)
 - [ ] Wire PowMR inverter RS485 RJ45 port directly (bypass cloud datalogger)
 - [ ] MPPT monitoring — requires second HHJ60-PRO unit to enable inter-device RS485 sniffing (also needed for dual-string setup to address panel shading)
 - [ ] Install and wire PZEM shunt
-- [ ] Diesel heater BLE integration (Hcalory/Vevor protocol, bderleta/vevor-ble-bridge)
+- [ ] Diesel heater BLE integration — Tuya BLE protocol confirmed (service 0x1910); need BLE HCI snoop log from Motorola phone to extract local key. Samsung Galaxy S25 bugreport does not include BT log. Alternatively try `tuya_ble` HA custom component which handles key exchange automatically.
 - [ ] Build HA dashboard

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import paho.mqtt.client as mqtt
+import serial as pyserial
 from bleak import BleakClient, BleakError
 
 logging.basicConfig(
@@ -18,9 +19,9 @@ logging.basicConfig(
 )
 log = logging.getLogger("bms")
 
-MQTT_HOST      = "localhost"
-MQTT_PORT      = 1883
-POLL_INTERVAL  = 10  # seconds between polls
+MQTT_HOST       = "localhost"
+MQTT_PORT       = 1883
+POLL_INTERVAL   = 10  # seconds between polls
 CONNECT_TIMEOUT = 2
 
 NOTIFY_UUID = "0000ff01-0000-1000-8000-00805f9b34fb"
@@ -29,8 +30,8 @@ CMD_BASIC   = bytes([0xdd, 0xa5, 0x03, 0x00, 0xff, 0xfd, 0x77])
 CMD_CELLS   = bytes([0xdd, 0xa5, 0x04, 0x00, 0xff, 0xfc, 0x77])
 
 DEVICES = [
-    {"mac": "A4:C1:37:54:73:05", "name": "8s_battery", "label": "8S Battery"},
-    {"mac": "A5:C2:37:30:C9:EA", "name": "4s_battery", "label": "4S Battery"},
+    {"serial_port": "/dev/ttyUSB0", "name": "8s_battery", "label": "8S Battery"},
+    {"mac": "A5:C2:37:30:C9:EA",   "name": "4s_battery", "label": "4S Battery"},
 ]
 
 
@@ -68,6 +69,27 @@ def parse_cells(data: bytes, bms: BmsData) -> None:
     bms.cell_voltages = [
         struct.unpack_from(">H", data, 4 + i * 2)[0] / 1000 for i in range(n)
     ]
+
+
+def read_bms_serial(port: str) -> Optional[BmsData]:
+    try:
+        s = pyserial.Serial(port, baudrate=9600, timeout=2)
+        s.write(CMD_BASIC)
+        import time; time.sleep(0.3)
+        basic_data = s.read(64)
+        bms = parse_basic(bytes(basic_data))
+        if bms is None:
+            s.close()
+            return None
+        s.write(CMD_CELLS)
+        time.sleep(0.3)
+        cells_data = s.read(64)
+        parse_cells(bytes(cells_data), bms)
+        s.close()
+        return bms
+    except (pyserial.SerialException, OSError) as e:
+        log.warning("Serial error on %s: %s", port, e)
+        return None
 
 
 async def read_bms(mac: str) -> Optional[BmsData]:
@@ -176,15 +198,20 @@ def publish_state(mqttc: mqtt.Client, device: dict, bms: BmsData) -> None:
 
 
 async def poll_device(mqttc: mqtt.Client, device: dict, discovery_done: set) -> None:
-    mac = device["mac"]
-    log.info("Polling %s (%s)", device["label"], mac)
-    bms = await read_bms(mac)
+    dev_id = device["name"]
+    log.info("Polling %s", device["label"])
+    if "serial_port" in device:
+        bms = await asyncio.get_event_loop().run_in_executor(
+            None, read_bms_serial, device["serial_port"]
+        )
+    else:
+        bms = await read_bms(device["mac"])
     if bms is None:
         log.warning("No data from %s", device["label"])
         return
-    if mac not in discovery_done:
+    if dev_id not in discovery_done:
         publish_discovery(mqttc, device, bms)
-        discovery_done.add(mac)
+        discovery_done.add(dev_id)
     publish_state(mqttc, device, bms)
 
 
